@@ -59,7 +59,7 @@ export default function Board() {
     const fbCanvas = new fabric.Canvas(canvasRef.current, {
       width: canvasWidth,
       height: canvasHeight,
-      backgroundColor: "#166534", // beautiful futsal pitch green
+      backgroundColor: "transparent",
     });
 
     fabricCanvasRef.current = fbCanvas;
@@ -83,50 +83,49 @@ export default function Board() {
   }, []);
 
   const drawFutsalCourt = (canvas: fabric.Canvas, w: number, h: number) => {
-    const borderOffset = 20;
-    const pitchW = w - borderOffset * 2;
-    const pitchH = h - borderOffset * 2;
+    const paddingX = 40;
+    const paddingY = 30;
+    const pitchW = w - paddingX * 2;
+    const pitchH = h - paddingY * 2;
 
-    // Outer boundary line
-    const outerRect = new fabric.Rect({
-      left: borderOffset,
-      top: borderOffset,
-      width: pitchW,
-      height: pitchH,
+    const lineStyle = {
       fill: "transparent",
       stroke: "#ffffff",
       strokeWidth: 3,
       selectable: false,
       evented: false,
+    };
+
+    // 1. Outer boundary line
+    const outerRect = new fabric.Rect({
+      left: paddingX,
+      top: paddingY,
+      width: pitchW,
+      height: pitchH,
+      ...lineStyle,
     });
     canvas.add(outerRect);
 
-    // Center line
+    // 2. Center line
     const centerLine = new fabric.Line(
-      [w / 2, borderOffset, w / 2, h - borderOffset],
+      [w / 2, paddingY, w / 2, h - paddingY],
       {
-        stroke: "#ffffff",
-        strokeWidth: 3,
-        selectable: false,
-        evented: false,
+        ...lineStyle,
       }
     );
     canvas.add(centerLine);
 
-    // Center circle
+    // 3. Center circle
+    const centerCircleRadius = pitchH * 0.15;
     const centerCircle = new fabric.Circle({
-      left: w / 2 - 60,
-      top: h / 2 - 60,
-      radius: 60,
-      fill: "transparent",
-      stroke: "#ffffff",
-      strokeWidth: 3,
-      selectable: false,
-      evented: false,
+      left: w / 2 - centerCircleRadius,
+      top: h / 2 - centerCircleRadius,
+      radius: centerCircleRadius,
+      ...lineStyle,
     });
     canvas.add(centerCircle);
 
-    // Center spot
+    // 4. Center spot
     const centerSpot = new fabric.Circle({
       left: w / 2 - 4,
       top: h / 2 - 4,
@@ -137,34 +136,139 @@ export default function Board() {
     });
     canvas.add(centerSpot);
 
-    // Penalty Areas (simple arcs/rects for 6m line)
-    // Left Penalty Area
-    const leftPenalty = new fabric.Rect({
-      left: borderOffset,
-      top: h / 2 - 80,
-      width: 80,
-      height: 160,
-      fill: "transparent",
-      stroke: "#ffffff",
-      strokeWidth: 3,
-      selectable: false,
-      evented: false,
+    // Futsal goal width is 3m. Let's scale it as 15% of pitch height
+    const goalW = pitchH * 0.15;
+    // Penalty area radius is 6m, which is twice the goal width
+    const penaltyRadius = goalW * 2;
+
+    // 5. Left Penalty Area (Official D-shape)
+    const leftPenaltyPath = `M ${paddingX} ${h / 2 - goalW / 2 - penaltyRadius} ` +
+      `A ${penaltyRadius} ${penaltyRadius} 0 0 1 ${paddingX + penaltyRadius} ${h / 2 - goalW / 2} ` +
+      `L ${paddingX + penaltyRadius} ${h / 2 + goalW / 2} ` +
+      `A ${penaltyRadius} ${penaltyRadius} 0 0 1 ${paddingX} ${h / 2 + goalW / 2 + penaltyRadius}`;
+
+    const leftPenalty = new fabric.Path(leftPenaltyPath, {
+      ...lineStyle,
     });
     canvas.add(leftPenalty);
 
-    // Right Penalty Area
-    const rightPenalty = new fabric.Rect({
-      left: w - borderOffset - 80,
-      top: h / 2 - 80,
-      width: 80,
-      height: 160,
-      fill: "transparent",
-      stroke: "#ffffff",
-      strokeWidth: 3,
+    // 6. Right Penalty Area (Official D-shape)
+    const rightPenaltyPath = `M ${w - paddingX} ${h / 2 - goalW / 2 - penaltyRadius} ` +
+      `A ${penaltyRadius} ${penaltyRadius} 0 0 0 ${w - paddingX - penaltyRadius} ${h / 2 - goalW / 2} ` +
+      `L ${w - paddingX - penaltyRadius} ${h / 2 + goalW / 2} ` +
+      `A ${penaltyRadius} ${penaltyRadius} 0 0 0 ${w - paddingX} ${h / 2 + goalW / 2 + penaltyRadius}`;
+
+    const rightPenalty = new fabric.Path(rightPenaltyPath, {
+      ...lineStyle,
+    });
+    canvas.add(rightPenalty);
+
+    // 7. Left Goals (behind goal line)
+    const leftGoal = new fabric.Rect({
+      left: paddingX - 15,
+      top: h / 2 - goalW / 2,
+      width: 15,
+      height: goalW,
+      ...lineStyle,
+    });
+    canvas.add(leftGoal);
+
+    // 8. Right Goals (behind goal line)
+    const rightGoal = new fabric.Rect({
+      left: w - paddingX,
+      top: h / 2 - goalW / 2,
+      width: 15,
+      height: goalW,
+      ...lineStyle,
+    });
+    canvas.add(rightGoal);
+
+    // 9. Penalty spots (6m spots)
+    const left6mSpot = new fabric.Circle({
+      left: paddingX + penaltyRadius - 3,
+      top: h / 2 - 3,
+      radius: 3,
+      fill: "#ffffff",
       selectable: false,
       evented: false,
     });
-    canvas.add(rightPenalty);
+    const right6mSpot = new fabric.Circle({
+      left: w - paddingX - penaltyRadius - 3,
+      top: h / 2 - 3,
+      radius: 3,
+      fill: "#ffffff",
+      selectable: false,
+      evented: false,
+    });
+    canvas.add(left6mSpot, right6mSpot);
+
+    // 10. Double-penalty spots (10m spots)
+    const doublePenaltyDist = penaltyRadius * (10 / 6);
+    const left10mSpot = new fabric.Circle({
+      left: paddingX + doublePenaltyDist - 3,
+      top: h / 2 - 3,
+      radius: 3,
+      fill: "#ffffff",
+      selectable: false,
+      evented: false,
+    });
+    const right10mSpot = new fabric.Circle({
+      left: w - paddingX - doublePenaltyDist - 3,
+      top: h / 2 - 3,
+      radius: 3,
+      fill: "#ffffff",
+      selectable: false,
+      evented: false,
+    });
+    canvas.add(left10mSpot, right10mSpot);
+
+    // 11. Corner Arcs
+    const cornerRadius = 15;
+    // Top-Left Corner
+    const tlCorner = new fabric.Path(
+      `M ${paddingX + cornerRadius} ${paddingY} A ${cornerRadius} ${cornerRadius} 0 0 1 ${paddingX} ${paddingY + cornerRadius}`,
+      { ...lineStyle }
+    );
+    // Bottom-Left Corner
+    const blCorner = new fabric.Path(
+      `M ${paddingX} ${h - paddingY - cornerRadius} A ${cornerRadius} ${cornerRadius} 0 0 1 ${paddingX + cornerRadius} ${h - paddingY}`,
+      { ...lineStyle }
+    );
+    // Top-Right Corner
+    const trCorner = new fabric.Path(
+      `M ${w - paddingX} ${paddingY + cornerRadius} A ${cornerRadius} ${cornerRadius} 0 0 1 ${w - paddingX - cornerRadius} ${paddingY}`,
+      { ...lineStyle }
+    );
+    // Bottom-Right Corner
+    const brCorner = new fabric.Path(
+      `M ${w - paddingX - cornerRadius} ${h - paddingY} A ${cornerRadius} ${cornerRadius} 0 0 1 ${w - paddingX} ${h - paddingY - cornerRadius}`,
+      { ...lineStyle }
+    );
+    canvas.add(tlCorner, blCorner, trCorner, brCorner);
+
+    // 12. Substitution zones (marks at the bottom touchline)
+    const tickLen = 6;
+    const subZoneOffset1 = pitchW * 0.125;
+    const subZoneOffset2 = pitchW * 0.25;
+
+    const ticks: [number, number, number, number][] = [
+      // Left side substitution zone
+      [w / 2 - subZoneOffset2, h - paddingY - tickLen, w / 2 - subZoneOffset2, h - paddingY + tickLen],
+      [w / 2 - subZoneOffset1, h - paddingY - tickLen, w / 2 - subZoneOffset1, h - paddingY + tickLen],
+      // Right side substitution zone
+      [w / 2 + subZoneOffset1, h - paddingY - tickLen, w / 2 + subZoneOffset1, h - paddingY + tickLen],
+      [w / 2 + subZoneOffset2, h - paddingY - tickLen, w / 2 + subZoneOffset2, h - paddingY + tickLen],
+    ];
+
+    ticks.forEach((t) => {
+      const tickLine = new fabric.Line(t, {
+        stroke: "#ffffff",
+        strokeWidth: 2,
+        selectable: false,
+        evented: false,
+      });
+      canvas.add(tickLine);
+    });
   };
 
   // Add elements
@@ -251,7 +355,7 @@ export default function Board() {
     if (!fabricCanvasRef.current) return;
     const canvas = fabricCanvasRef.current;
     canvas.clear();
-    canvas.backgroundColor = "#166534";
+    canvas.backgroundColor = "transparent";
     drawFutsalCourt(canvas, canvas.getWidth(), canvas.getHeight());
     canvas.renderAll();
   };
@@ -321,7 +425,16 @@ export default function Board() {
             </div>
           </div>
 
-          <div ref={containerRef} className="relative w-full rounded-lg overflow-hidden border border-zinc-700">
+          <div
+            ref={containerRef}
+            className="relative w-full rounded-lg overflow-hidden border border-zinc-700"
+            style={{
+              backgroundImage: "url('/parquet.png')",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+            }}
+          >
             <canvas ref={canvasRef} className="block w-full" />
           </div>
 
