@@ -1,3 +1,5 @@
+"use client";
+
 // components/DarkModeToggle.tsx
 
 import { useEffect, useState } from 'react';

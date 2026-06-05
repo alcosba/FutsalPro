@@ -1,10 +1,20 @@
+"use client";
+
 import React, { useState } from "react";
-import Board from "@/components/Board";
-import Calendar from "@/components/Calendar";
-import Stats from "@/components/Stats";
+import dynamic from "next/dynamic";
 import DarkModeToggle from "@/components/DarkModeToggle";
 
+const Board = dynamic(() => import("@/components/Board"), { ssr: false });
+const Calendar = dynamic(() => import("@/components/Calendar"), { ssr: false });
+const Stats = dynamic(() => import("@/components/Stats"), { ssr: false });
+
 export default function Home() {
+  const [activeTab, setActiveTab] = useState("board");
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case "board":
+        return <Board />;
       case "calendar":
         return <Calendar />;
       case "stats":
