@@ -88,6 +88,47 @@ export default function Board() {
     const pitchW = w - paddingX * 2;
     const pitchH = h - paddingY * 2;
 
+    // A. Draw professional LNFS-style blue outer zones (the run-off borders around the playing pitch)
+    const borderStyle = {
+      fill: "#1e3a8a", // elegant deep blue (LNFS / FIFA style)
+      selectable: false,
+      evented: false,
+    };
+    
+    // Top border
+    const topBorder = new fabric.Rect({
+      left: 0,
+      top: 0,
+      width: w,
+      height: paddingY,
+      ...borderStyle,
+    });
+    // Bottom border
+    const bottomBorder = new fabric.Rect({
+      left: 0,
+      top: h - paddingY,
+      width: w,
+      height: paddingY,
+      ...borderStyle,
+    });
+    // Left border
+    const leftBorder = new fabric.Rect({
+      left: 0,
+      top: paddingY,
+      width: paddingX,
+      height: pitchH,
+      ...borderStyle,
+    });
+    // Right border
+    const rightBorder = new fabric.Rect({
+      left: w - paddingX,
+      top: paddingY,
+      width: paddingX,
+      height: pitchH,
+      ...borderStyle,
+    });
+    canvas.add(topBorder, bottomBorder, leftBorder, rightBorder);
+
     const lineStyle = {
       fill: "transparent",
       stroke: "#ffffff",
@@ -163,25 +204,111 @@ export default function Board() {
     });
     canvas.add(rightPenalty);
 
-    // 7. Left Goals (behind goal line)
-    const leftGoal = new fabric.Rect({
-      left: paddingX - 15,
-      top: h / 2 - goalW / 2,
-      width: 15,
-      height: goalW,
-      ...lineStyle,
-    });
-    canvas.add(leftGoal);
+    // 7. Left Goal Frame (behind goal line)
+    const goalDepth = 20;
+    const leftGoalBack = new fabric.Line(
+      [paddingX - goalDepth, h / 2 - goalW / 2, paddingX - goalDepth, h / 2 + goalW / 2],
+      { ...lineStyle }
+    );
+    const leftGoalTop = new fabric.Line(
+      [paddingX, h / 2 - goalW / 2, paddingX - goalDepth, h / 2 - goalW / 2],
+      { ...lineStyle }
+    );
+    const leftGoalBottom = new fabric.Line(
+      [paddingX, h / 2 + goalW / 2, paddingX - goalDepth, h / 2 + goalW / 2],
+      { ...lineStyle }
+    );
+    canvas.add(leftGoalBack, leftGoalTop, leftGoalBottom);
 
-    // 8. Right Goals (behind goal line)
-    const rightGoal = new fabric.Rect({
-      left: w - paddingX,
-      top: h / 2 - goalW / 2,
-      width: 15,
-      height: goalW,
-      ...lineStyle,
+    // Left Goal Netting Lines
+    const leftNetLines: fabric.Line[] = [];
+    for (let offset = -goalW / 2; offset <= goalW / 2; offset += 10) {
+      leftNetLines.push(
+        new fabric.Line([paddingX, h / 2 + offset, paddingX - goalDepth, h / 2 + offset + 5], {
+          stroke: "rgba(255, 255, 255, 0.25)",
+          strokeWidth: 1,
+          selectable: false,
+          evented: false,
+        })
+      );
+      leftNetLines.push(
+        new fabric.Line([paddingX, h / 2 + offset, paddingX - goalDepth, h / 2 + offset - 5], {
+          stroke: "rgba(255, 255, 255, 0.25)",
+          strokeWidth: 1,
+          selectable: false,
+          evented: false,
+        })
+      );
+    }
+    canvas.add(...leftNetLines);
+
+    // 8. Right Goal Frame (behind goal line)
+    const rightGoalBack = new fabric.Line(
+      [w - paddingX + goalDepth, h / 2 - goalW / 2, w - paddingX + goalDepth, h / 2 + goalW / 2],
+      { ...lineStyle }
+    );
+    const rightGoalTop = new fabric.Line(
+      [w - paddingX, h / 2 - goalW / 2, w - paddingX + goalDepth, h / 2 - goalW / 2],
+      { ...lineStyle }
+    );
+    const rightGoalBottom = new fabric.Line(
+      [w - paddingX, h / 2 + goalW / 2, w - paddingX + goalDepth, h / 2 + goalW / 2],
+      { ...lineStyle }
+    );
+    canvas.add(rightGoalBack, rightGoalTop, rightGoalBottom);
+
+    // Right Goal Netting Lines
+    const rightNetLines: fabric.Line[] = [];
+    for (let offset = -goalW / 2; offset <= goalW / 2; offset += 10) {
+      rightNetLines.push(
+        new fabric.Line([w - paddingX, h / 2 + offset, w - paddingX + goalDepth, h / 2 + offset + 5], {
+          stroke: "rgba(255, 255, 255, 0.25)",
+          strokeWidth: 1,
+          selectable: false,
+          evented: false,
+        })
+      );
+      rightNetLines.push(
+        new fabric.Line([w - paddingX, h / 2 + offset, w - paddingX + goalDepth, h / 2 + offset - 5], {
+          stroke: "rgba(255, 255, 255, 0.25)",
+          strokeWidth: 1,
+          selectable: false,
+          evented: false,
+        })
+      );
+    }
+    canvas.add(...rightNetLines);
+
+    // 8.5 Striped Goalposts (White & Red)
+    const postStyle = {
+      radius: 5,
+      fill: "#ffffff",
+      stroke: "#ef4444", // red stripes look
+      strokeWidth: 2,
+      selectable: false,
+      evented: false,
+    };
+    const leftPost1 = new fabric.Circle({
+      left: paddingX - 5,
+      top: h / 2 - goalW / 2 - 5,
+      ...postStyle,
     });
-    canvas.add(rightGoal);
+    const leftPost2 = new fabric.Circle({
+      left: paddingX - 5,
+      top: h / 2 + goalW / 2 - 5,
+      ...postStyle,
+    });
+    const rightPost1 = new fabric.Circle({
+      left: w - paddingX - 5,
+      top: h / 2 - goalW / 2 - 5,
+      ...postStyle,
+    });
+    const rightPost2 = new fabric.Circle({
+      left: w - paddingX - 5,
+      top: h / 2 + goalW / 2 - 5,
+      ...postStyle,
+    });
+    canvas.add(leftPost1, leftPost2, rightPost1, rightPost2);
 
     // 9. Penalty spots (6m spots)
     const left6mSpot = new fabric.Circle({
