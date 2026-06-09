@@ -1,20 +1,31 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import * as fabric from "fabric";
 import { useToast } from "@/components/shared/Toast";
 
-type Tool = "select" | "cono" | "flecha" | "balon" | "monigote" | "porteria" | "linea" | "arco" | "zona" | "freehand" | "borrador";
+type Tool =
+  | "select"
+  | "cono"
+  | "flecha"
+  | "balon"
+  | "monigote"
+  | "porteria"
+  | "linea"
+  | "arco"
+  | "zona"
+  | "freehand"
+  | "borrador";
 type PitchType = "full" | "half" | "third";
 type PitchStyle = "parquet" | "blue" | "green" | "white";
 
-interface ToolConfig {
-  id: Tool;
-  label: string;
-  icon: string;
+interface DrawingObject {
+  type: string;
+  x: number;
+  y: number;
+  data: any;
 }
 
-const TOOLS: ToolConfig[] = [
+const TOOLS = [
   { id: "select", label: "Seleccionar", icon: "↖️" },
   { id: "cono", label: "Cono", icon: "🔴" },
   { id: "flecha", label: "Flecha", icon: "➜" },
@@ -44,389 +55,72 @@ const COLORS = [
 export default function Board() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
   const { addToast } = useToast();
 
-  // UI State
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [activeColor, setActiveColor] = useState<string>("#ffffff");
   const [pitchType, setPitchType] = useState<PitchType>("full");
   const [pitchStyle, setPitchStyle] = useState<PitchStyle>("parquet");
   const [playerNumber, setPlayerNumber] = useState(1);
-  const [zoom, setZoom] = useState(1);
 
-  // Drawing state
   const isDrawingRef = useRef(false);
   const startPointRef = useRef({ x: 0, y: 0 });
-  const tempObjectRef = useRef<fabric.Object | null>(null);
+  const pathRef = useRef<Array<{ x: number; y: number }>>([]);
+  const objectsRef = useRef<DrawingObject[]>([]);
 
-  // Initialize Canvas
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
     const width = containerRef.current.clientWidth || 1000;
     const height = 600;
 
-    const canvas = new fabric.Canvas(canvasRef.current, {
-      width,
-      height,
-      backgroundColor: "transparent",
-      selection: false,
-    });
+    canvas.width = width;
+    canvas.height = height;
 
-    fabricCanvasRef.current = canvas;
-    drawField(canvas, pitchType, pitchStyle);
+    redrawCanvas(ctx, canvas, pitchType, pitchStyle);
 
-    // Canvas Event Listeners
-    canvas.on("mouse:down", handleMouseDown);
-    canvas.on("mouse:move", handleMouseMove);
-    canvas.on("mouse:up", handleMouseUp);
+    canvas.addEventListener("mousedown", handleMouseDown);
+    canvas.addEventListener("mousemove", handleMouseMove);
+    canvas.addEventListener("mouseup", handleMouseUp);
+    canvas.addEventListener("mouseleave", handleMouseUp);
 
-    // Resize Handler
     const handleResize = () => {
-      if (!containerRef.current || !canvas) return;
+      if (!containerRef.current) return;
       const newWidth = containerRef.current.clientWidth;
-      canvas.setDimensions({ width: newWidth, height });
-      drawField(canvas, pitchType, pitchStyle);
+      canvas.width = newWidth;
+      canvas.height = height;
+      redrawCanvas(ctx, canvas, pitchType, pitchStyle);
     };
 
     window.addEventListener("resize", handleResize);
 
     return () => {
+      canvas.removeEventListener("mousedown", handleMouseDown);
+      canvas.removeEventListener("mousemove", handleMouseMove);
+      canvas.removeEventListener("mouseup", handleMouseUp);
+      canvas.removeEventListener("mouseleave", handleMouseUp);
       window.removeEventListener("resize", handleResize);
-      canvas.dispose();
     };
   }, []);
 
-  // Redraw field when type or style changes
   useEffect(() => {
-    if (!fabricCanvasRef.current) return;
-    drawField(fabricCanvasRef.current, pitchType, pitchStyle);
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext("2d");
+    if (!ctx) return;
+    redrawCanvas(ctx, canvasRef.current, pitchType, pitchStyle);
   }, [pitchType, pitchStyle]);
 
-  const handleMouseDown = (e: any) => {
-    if (activeTool === "select") return;
-    if (!fabricCanvasRef.current) return;
-
-    const pointer = e.pointer || { x: 0, y: 0 };
-    startPointRef.current = { x: pointer.x, y: pointer.y };
-    isDrawingRef.current = true;
-
-    if (activeTool === "freehand") {
-      fabricCanvasRef.current.isDrawingMode = true;
-      if (fabricCanvasRef.current.freeDrawingBrush) {
-        fabricCanvasRef.current.freeDrawingBrush.color = activeColor;
-        fabricCanvasRef.current.freeDrawingBrush.width = 4;
-      }
-    } else if (activeTool === "borrador") {
-      const target = fabricCanvasRef.current.findTarget(e.e as MouseEvent);
-      if (target && !(target as any).isCourtLine) {
-        fabricCanvasRef.current.remove(target);
-        fabricCanvasRef.current.renderAll();
-        addToast("Elemento eliminado", "success");
-      }
-    }
-  };
-
-  const handleMouseMove = (e: any) => {
-    if (!isDrawingRef.current || !fabricCanvasRef.current) return;
-    if (activeTool === "freehand" || activeTool === "select" || activeTool === "borrador") return;
-
-    const pointer = e.pointer || { x: 0, y: 0 };
-    const canvas = fabricCanvasRef.current;
-
-    // Remove previous temp object
-    if (tempObjectRef.current) {
-      canvas.remove(tempObjectRef.current);
-    }
-
-    const dx = pointer.x - startPointRef.current.x;
-    const dy = pointer.y - startPointRef.current.y;
-
-    switch (activeTool) {
-      case "linea":
-        tempObjectRef.current = new fabric.Line(
-          [startPointRef.current.x, startPointRef.current.y, pointer.x, pointer.y],
-          {
-            stroke: activeColor,
-            strokeWidth: 3,
-            selectable: false,
-          }
-        );
-        break;
-
-      case "arco":
-        const radius = Math.sqrt(dx * dx + dy * dy);
-        tempObjectRef.current = new fabric.Circle({
-          left: startPointRef.current.x - radius,
-          top: startPointRef.current.y - radius,
-          radius,
-          fill: "transparent",
-          stroke: activeColor,
-          strokeWidth: 3,
-          selectable: false,
-        });
-        break;
-
-      case "zona":
-        tempObjectRef.current = new fabric.Rect({
-          left: Math.min(startPointRef.current.x, pointer.x),
-          top: Math.min(startPointRef.current.y, pointer.y),
-          width: Math.abs(dx),
-          height: Math.abs(dy),
-          fill: activeColor,
-          opacity: 0.15,
-          stroke: activeColor,
-          strokeWidth: 2,
-          selectable: false,
-        });
-        break;
-
-      case "flecha":
-        const angle = Math.atan2(dy, dx);
-
-        const line = new fabric.Line(
-          [startPointRef.current.x, startPointRef.current.y, pointer.x, pointer.y],
-          {
-            stroke: activeColor,
-            strokeWidth: 3,
-            selectable: false,
-          }
-        );
-
-        const arrowSize = 15;
-        const arrowPoints = [
-          { x: pointer.x, y: pointer.y },
-          {
-            x: pointer.x - arrowSize * Math.cos(angle - Math.PI / 6),
-            y: pointer.y - arrowSize * Math.sin(angle - Math.PI / 6),
-          },
-          {
-            x: pointer.x - arrowSize * Math.cos(angle + Math.PI / 6),
-            y: pointer.y - arrowSize * Math.sin(angle + Math.PI / 6),
-          },
-        ];
-
-        const arrow = new fabric.Polygon(arrowPoints, {
-          fill: activeColor,
-          selectable: false,
-        });
-
-        tempObjectRef.current = new fabric.Group([line, arrow], {
-          selectable: false,
-        });
-        break;
-    }
-
-    if (tempObjectRef.current) {
-      canvas.add(tempObjectRef.current);
-      canvas.renderAll();
-    }
-  };
-
-  const handleMouseUp = (e: any) => {
-    if (!isDrawingRef.current || !fabricCanvasRef.current) return;
-    isDrawingRef.current = false;
-
-    const canvas = fabricCanvasRef.current;
-    const pointer = e.pointer || { x: 0, y: 0 };
-
-    if (tempObjectRef.current) {
-      tempObjectRef.current.selectable = true;
-      tempObjectRef.current.evented = true;
-      tempObjectRef.current = null;
-    }
-
-    const dx = pointer.x - startPointRef.current.x;
-    const dy = pointer.y - startPointRef.current.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    if (distance < 5 && activeTool !== "linea" && activeTool !== "arco") {
-      // Click action
-      switch (activeTool) {
-        case "cono":
-          addCone(canvas, pointer.x, pointer.y);
-          break;
-        case "balon":
-          addBall(canvas, pointer.x, pointer.y);
-          break;
-        case "monigote":
-          addPlayer(canvas, pointer.x, pointer.y, playerNumber);
-          break;
-        case "porteria":
-          addGoal(canvas, pointer.x, pointer.y);
-          break;
-      }
-    } else {
-      // Drag action - already added as tempObject
-      canvas.renderAll();
-    }
-
-    if (activeTool === "freehand") {
-      canvas.isDrawingMode = false;
-    }
-  };
-
-  const addCone = (canvas: fabric.Canvas, x: number, y: number) => {
-    const cone = new fabric.Triangle({
-      left: x,
-      top: y,
-      width: 20,
-      height: 20,
-      fill: activeColor,
-      selectable: true,
-      evented: true,
-    });
-    canvas.add(cone);
-    canvas.renderAll();
-    addToast("Cono añadido", "success");
-  };
-
-  const addBall = (canvas: fabric.Canvas, x: number, y: number) => {
-    const ball = new fabric.Circle({
-      left: x - 8,
-      top: y - 8,
-      radius: 8,
-      fill: activeColor,
-      selectable: true,
-      evented: true,
-    });
-    canvas.add(ball);
-    canvas.renderAll();
-    addToast("Balón añadido", "success");
-  };
-
-  const addPlayer = (canvas: fabric.Canvas, x: number, y: number, number: number) => {
-    const circle = new fabric.Circle({
-      left: x - 12,
-      top: y - 12,
-      radius: 12,
-      fill: activeColor,
-      selectable: true,
-      evented: true,
-    });
-
-    const text = new fabric.Text(String(number), {
-      left: x - 5,
-      top: y - 7,
-      fontSize: 14,
-      fontWeight: "bold",
-      fill: "#000",
-      selectable: false,
-      evented: false,
-    });
-
-    const group = new fabric.Group([circle, text], {
-      left: x,
-      top: y,
-      selectable: true,
-      evented: true,
-    });
-
-    canvas.add(group);
-    canvas.renderAll();
-    addToast(`Jugador #${number} añadido`, "success");
-  };
-
-  const addGoal = (canvas: fabric.Canvas, x: number, y: number) => {
-    const width = 40;
-    const height = 60;
-
-    // Goal structure
-    const goalRect = new fabric.Rect({
-      left: x - width / 2,
-      top: y - height / 2,
-      width,
-      height,
-      fill: "transparent",
-      stroke: activeColor,
-      strokeWidth: 3,
-      selectable: true,
-      evented: true,
-    });
-
-    // Goal net (diagonal lines)
-    const netLines = [];
-    for (let i = 0; i < 5; i++) {
-      const offset = (i / 4) * width;
-      netLines.push(
-        new fabric.Line(
-          [
-            x - width / 2 + offset,
-            y - height / 2,
-            x - width / 2 + offset,
-            y + height / 2,
-          ],
-          {
-            stroke: activeColor,
-            strokeWidth: 1,
-            opacity: 0.5,
-            selectable: false,
-            evented: false,
-          }
-        )
-      );
-    }
-
-    canvas.add(goalRect);
-    netLines.forEach((line) => canvas.add(line));
-    canvas.renderAll();
-    addToast("Portería añadida", "success");
-  };
-
-  const clearCanvas = () => {
-    if (!fabricCanvasRef.current) return;
-    const canvas = fabricCanvasRef.current;
-    const objects = canvas.getObjects();
-    objects.forEach((obj: any) => {
-      if (!(obj as any).isCourtLine) {
-        canvas.remove(obj);
-      }
-    });
-    canvas.renderAll();
-    addToast("Pizarra limpiada", "success");
-  };
-
-  const saveExercise = async () => {
-    if (!fabricCanvasRef.current) return;
-
-    const name = prompt("Nombre del ejercicio:", `Ejercicio ${new Date().toLocaleTimeString()}`);
-    if (!name) return;
-
-    try {
-      const json = JSON.stringify(fabricCanvasRef.current.toJSON());
-      const key = `futsal_exercise_${Date.now()}`;
-      localStorage.setItem(key, json);
-      addToast(`Ejercicio "${name}" guardado`, "success");
-    } catch (error) {
-      addToast("Error al guardar ejercicio", "error");
-    }
-  };
-
-  const downloadImage = () => {
-    if (!fabricCanvasRef.current) return;
-    const dataUrl = fabricCanvasRef.current.toDataURL({ format: "png" });
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = `futsal_tactical_${Date.now()}.png`;
-    link.click();
-    addToast("Imagen descargada", "success");
-  };
-
-  const drawField = (canvas: fabric.Canvas, type: PitchType, style: PitchStyle) => {
-    // Clear existing field
-    const objects = canvas.getObjects();
-    objects.forEach((obj: any) => {
-      if ((obj as any).isCourtLine) {
-        canvas.remove(obj);
-      }
-    });
-
-    const w = canvas.getWidth();
-    const h = canvas.getHeight();
-    const padding = 40;
-    const fieldW = w - padding * 2;
-    const fieldH = h - padding * 2;
+  const redrawCanvas = (
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    type: PitchType,
+    style: PitchStyle
+  ) => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const bgColor =
       style === "parquet"
@@ -436,122 +130,464 @@ export default function Board() {
           : style === "green"
             ? "#065f46"
             : "#e5e7eb";
+
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    drawField(ctx, canvas, type, style);
+
+    objectsRef.current.forEach((obj) => drawObject(ctx, obj));
+  };
+
+  const drawField = (
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    type: PitchType,
+    style: PitchStyle
+  ) => {
+    const w = canvas.width;
+    const h = canvas.height;
+    const padding = 40;
+    const fieldW = w - padding * 2;
+    const fieldH = h - padding * 2;
+
     const lineColor = style === "white" ? "#1f2937" : "#ffffff";
 
-    // Background
-    const bg = new fabric.Rect({
-      left: 0,
-      top: 0,
-      width: w,
-      height: h,
-      fill: bgColor,
-      selectable: false,
-      evented: false,
-    });
-    (bg as any).isCourtLine = true;
-    canvas.add(bg);
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 3;
 
-    // Field border
-    const border = new fabric.Rect({
-      left: padding,
-      top: padding,
-      width: fieldW,
-      height: fieldH,
-      fill: "transparent",
-      stroke: lineColor,
-      strokeWidth: 3,
-      selectable: false,
-      evented: false,
-    });
-    (border as any).isCourtLine = true;
-    canvas.add(border);
+    ctx.strokeRect(padding, padding, fieldW, fieldH);
 
-    // Center line
-    const centerLine = new fabric.Line(
-      [w / 2, padding, w / 2, h - padding],
-      {
-        stroke: lineColor,
-        strokeWidth: 2,
-        selectable: false,
-        evented: false,
-      }
-    );
-    (centerLine as any).isCourtLine = true;
-    canvas.add(centerLine);
+    ctx.beginPath();
+    ctx.moveTo(w / 2, padding);
+    ctx.lineTo(w / 2, h - padding);
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
-    // Center circle
-    const centerCircle = new fabric.Circle({
-      left: w / 2 - 50,
-      top: h / 2 - 50,
-      radius: 50,
-      fill: "transparent",
-      stroke: lineColor,
-      strokeWidth: 2,
-      selectable: false,
-      evented: false,
-    });
-    (centerCircle as any).isCourtLine = true;
-    canvas.add(centerCircle);
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 50, 0, Math.PI * 2);
+    ctx.stroke();
 
-    // Center point
-    const centerPoint = new fabric.Circle({
-      left: w / 2 - 4,
-      top: h / 2 - 4,
-      radius: 4,
-      fill: lineColor,
-      selectable: false,
-      evented: false,
-    });
-    (centerPoint as any).isCourtLine = true;
-    canvas.add(centerPoint);
+    ctx.fillStyle = lineColor;
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 4, 0, Math.PI * 2);
+    ctx.fill();
 
-    // Penalty areas
     const goalW = fieldH * 0.25;
     const penaltyRadius = goalW * 1.3;
 
-    // Left penalty area
-    const leftPenaltyPath = `M ${padding} ${h / 2 - goalW / 2} ` +
-      `L ${padding + penaltyRadius} ${h / 2 - goalW / 2} ` +
-      `A ${penaltyRadius} ${penaltyRadius} 0 0 1 ${padding + penaltyRadius} ${h / 2 + goalW / 2} ` +
-      `L ${padding} ${h / 2 + goalW / 2}`;
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 2;
 
-    const leftPenalty = new fabric.Path(leftPenaltyPath, {
-      stroke: lineColor,
-      strokeWidth: 2,
-      fill: "transparent",
-      selectable: false,
-      evented: false,
-    });
-    (leftPenalty as any).isCourtLine = true;
-    canvas.add(leftPenalty);
+    ctx.beginPath();
+    ctx.moveTo(padding, h / 2 - goalW / 2);
+    ctx.lineTo(padding + penaltyRadius, h / 2 - goalW / 2);
+    ctx.arc(
+      padding + penaltyRadius,
+      h / 2,
+      goalW / 2,
+      (-Math.PI) / 2,
+      Math.PI / 2
+    );
+    ctx.lineTo(padding, h / 2 + goalW / 2);
+    ctx.stroke();
 
-    // Right penalty area (mirrored)
-    const rightPenaltyPath = `M ${w - padding} ${h / 2 - goalW / 2} ` +
-      `L ${w - padding - penaltyRadius} ${h / 2 - goalW / 2} ` +
-      `A ${penaltyRadius} ${penaltyRadius} 0 0 0 ${w - padding - penaltyRadius} ${h / 2 + goalW / 2} ` +
-      `L ${w - padding} ${h / 2 + goalW / 2}`;
+    ctx.beginPath();
+    ctx.moveTo(w - padding, h / 2 - goalW / 2);
+    ctx.lineTo(w - padding - penaltyRadius, h / 2 - goalW / 2);
+    ctx.arc(
+      w - padding - penaltyRadius,
+      h / 2,
+      goalW / 2,
+      Math.PI / 2,
+      (-Math.PI) / 2
+    );
+    ctx.lineTo(w - padding, h / 2 + goalW / 2);
+    ctx.stroke();
+  };
 
-    const rightPenalty = new fabric.Path(rightPenaltyPath, {
-      stroke: lineColor,
-      strokeWidth: 2,
-      fill: "transparent",
-      selectable: false,
-      evented: false,
-    });
-    (rightPenalty as any).isCourtLine = true;
-    canvas.add(rightPenalty);
+  const drawObject = (ctx: CanvasRenderingContext2D, obj: DrawingObject) => {
+    ctx.fillStyle = obj.data.color || "#ffffff";
+    ctx.strokeStyle = obj.data.color || "#ffffff";
+    ctx.lineWidth = obj.data.lineWidth || 2;
 
-    canvas.renderAll();
+    switch (obj.type) {
+      case "cono":
+        drawCone(ctx, obj.x, obj.y, obj.data.color);
+        break;
+      case "balon":
+        ctx.beginPath();
+        ctx.arc(obj.x, obj.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      case "monigote":
+        drawPlayer(ctx, obj.x, obj.y, obj.data.number, obj.data.color);
+        break;
+      case "porteria":
+        drawGoal(ctx, obj.x, obj.y, obj.data.color);
+        break;
+      case "linea":
+        ctx.beginPath();
+        ctx.moveTo(obj.data.x1, obj.data.y1);
+        ctx.lineTo(obj.data.x2, obj.data.y2);
+        ctx.stroke();
+        break;
+      case "arco":
+        ctx.beginPath();
+        ctx.arc(obj.x, obj.y, obj.data.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case "zona":
+        ctx.fillStyle = obj.data.color + "26";
+        ctx.fillRect(obj.data.x1, obj.data.y1, obj.data.x2, obj.data.y2);
+        ctx.strokeStyle = obj.data.color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(obj.data.x1, obj.data.y1, obj.data.x2, obj.data.y2);
+        break;
+      case "flecha":
+        drawArrow(
+          ctx,
+          obj.data.x1,
+          obj.data.y1,
+          obj.data.x2,
+          obj.data.y2,
+          obj.data.color
+        );
+        break;
+      case "freehand":
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        obj.data.points.forEach((point: any, index: number) => {
+          if (index === 0) {
+            ctx.moveTo(point.x, point.y);
+          } else {
+            ctx.lineTo(point.x, point.y);
+          }
+        });
+        ctx.stroke();
+        break;
+    }
+  };
+
+  const drawCone = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    color: string
+  ) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 12);
+    ctx.lineTo(x + 10, y + 10);
+    ctx.lineTo(x - 10, y + 10);
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  const drawPlayer = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    number: number,
+    color: string
+  ) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#000";
+    ctx.font = "bold 14px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(number), x, y);
+  };
+
+  const drawGoal = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    color: string
+  ) => {
+    const width = 40;
+    const height = 60;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x - width / 2, y - height / 2, width, height);
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.5;
+    for (let i = 0; i < 5; i++) {
+      const offset = (i / 4) * width;
+      ctx.beginPath();
+      ctx.moveTo(x - width / 2 + offset, y - height / 2);
+      ctx.lineTo(x - width / 2 + offset, y + height / 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  const drawArrow = (
+    ctx: CanvasRenderingContext2D,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: string
+  ) => {
+    const headlen = 15;
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(
+      x2 - headlen * Math.cos(angle - Math.PI / 6),
+      y2 - headlen * Math.sin(angle - Math.PI / 6)
+    );
+    ctx.lineTo(
+      x2 - headlen * Math.cos(angle + Math.PI / 6),
+      y2 - headlen * Math.sin(angle + Math.PI / 6)
+    );
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  const handleMouseDown = (e: MouseEvent) => {
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    startPointRef.current = { x, y };
+    isDrawingRef.current = true;
+    pathRef.current = [];
+
+    if (activeTool === "freehand") {
+      pathRef.current = [{ x, y }];
+    }
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDrawingRef.current || !canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (activeTool === "freehand") {
+      pathRef.current.push({ x, y });
+      const ctx = canvasRef.current.getContext("2d");
+      if (ctx) {
+        redrawCanvas(ctx, canvasRef.current, pitchType, pitchStyle);
+        ctx.strokeStyle = activeColor;
+        ctx.lineWidth = 3;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        pathRef.current.forEach((point, index) => {
+          if (index === 0) {
+            ctx.moveTo(point.x, point.y);
+          } else {
+            ctx.lineTo(point.x, point.y);
+          }
+        });
+        ctx.stroke();
+      }
+    }
+  };
+
+  const handleMouseUp = (e: MouseEvent) => {
+    if (!isDrawingRef.current || !canvasRef.current) return;
+    isDrawingRef.current = false;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const endX = e.clientX - rect.left;
+    const endY = e.clientY - rect.top;
+
+    const distance = Math.sqrt(
+      Math.pow(endX - startPointRef.current.x, 2) +
+        Math.pow(endY - startPointRef.current.y, 2)
+    );
+
+    if (distance < 5) {
+      switch (activeTool) {
+        case "cono":
+          objectsRef.current.push({
+            type: "cono",
+            x: startPointRef.current.x,
+            y: startPointRef.current.y,
+            data: { color: activeColor },
+          });
+          addToast("Cono añadido", "success");
+          break;
+        case "balon":
+          objectsRef.current.push({
+            type: "balon",
+            x: startPointRef.current.x,
+            y: startPointRef.current.y,
+            data: { color: activeColor },
+          });
+          addToast("Balón añadido", "success");
+          break;
+        case "monigote":
+          objectsRef.current.push({
+            type: "monigote",
+            x: startPointRef.current.x,
+            y: startPointRef.current.y,
+            data: { color: activeColor, number: playerNumber },
+          });
+          addToast(`Jugador #${playerNumber} añadido`, "success");
+          break;
+        case "porteria":
+          objectsRef.current.push({
+            type: "porteria",
+            x: startPointRef.current.x,
+            y: startPointRef.current.y,
+            data: { color: activeColor },
+          });
+          addToast("Portería añadida", "success");
+          break;
+      }
+    } else {
+      switch (activeTool) {
+        case "linea":
+          objectsRef.current.push({
+            type: "linea",
+            x: startPointRef.current.x,
+            y: startPointRef.current.y,
+            data: {
+              color: activeColor,
+              x1: startPointRef.current.x,
+              y1: startPointRef.current.y,
+              x2: endX,
+              y2: endY,
+            },
+          });
+          addToast("Línea dibujada", "success");
+          break;
+        case "arco":
+          const radius = Math.sqrt(
+            Math.pow(endX - startPointRef.current.x, 2) +
+              Math.pow(endY - startPointRef.current.y, 2)
+          );
+          objectsRef.current.push({
+            type: "arco",
+            x: startPointRef.current.x,
+            y: startPointRef.current.y,
+            data: { color: activeColor, radius },
+          });
+          addToast("Arco dibujado", "success");
+          break;
+        case "zona":
+          const w = endX - startPointRef.current.x;
+          const h = endY - startPointRef.current.y;
+          objectsRef.current.push({
+            type: "zona",
+            x: startPointRef.current.x,
+            y: startPointRef.current.y,
+            data: {
+              color: activeColor,
+              x1: startPointRef.current.x,
+              y1: startPointRef.current.y,
+              x2: Math.abs(w),
+              y2: Math.abs(h),
+            },
+          });
+          addToast("Zona dibujada", "success");
+          break;
+        case "flecha":
+          objectsRef.current.push({
+            type: "flecha",
+            x: startPointRef.current.x,
+            y: startPointRef.current.y,
+            data: {
+              color: activeColor,
+              x1: startPointRef.current.x,
+              y1: startPointRef.current.y,
+              x2: endX,
+              y2: endY,
+            },
+          });
+          addToast("Flecha dibujada", "success");
+          break;
+      }
+    }
+
+    if (activeTool === "freehand" && pathRef.current.length > 0) {
+      objectsRef.current.push({
+        type: "freehand",
+        x: 0,
+        y: 0,
+        data: { color: activeColor, points: pathRef.current },
+      });
+      addToast("Dibujo guardado", "success");
+    }
+
+    const ctx = canvasRef.current.getContext("2d");
+    if (ctx) {
+      redrawCanvas(ctx, canvasRef.current, pitchType, pitchStyle);
+    }
+  };
+
+  const clearCanvas = () => {
+    objectsRef.current = [];
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext("2d");
+      if (ctx) {
+        redrawCanvas(ctx, canvasRef.current, pitchType, pitchStyle);
+      }
+    }
+    addToast("Pizarra limpiada", "success");
+  };
+
+  const saveExercise = () => {
+    const name = prompt("Nombre del ejercicio:", `Ejercicio ${new Date().toLocaleTimeString()}`);
+    if (!name || !canvasRef.current) return;
+
+    const data = {
+      name,
+      objects: objectsRef.current,
+      timestamp: Date.now(),
+    };
+
+    try {
+      const key = `futsal_exercise_${Date.now()}`;
+      localStorage.setItem(key, JSON.stringify(data));
+      addToast(`Ejercicio "${name}" guardado`, "success");
+    } catch (error) {
+      addToast("Error al guardar ejercicio", "error");
+    }
+  };
+
+  const downloadImage = () => {
+    if (!canvasRef.current) return;
+    const link = document.createElement("a");
+    link.href = canvasRef.current.toDataURL("image/png");
+    link.download = `futsal_tactical_${Date.now()}.png`;
+    link.click();
+    addToast("Imagen descargada", "success");
   };
 
   return (
     <div className="w-full h-full bg-gray-900 rounded-lg overflow-hidden flex flex-col">
-      {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 p-4 space-y-3">
-        {/* Row 1: Field Configuration */}
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-300">Tipo de campo:</label>
+            <label className="text-sm font-medium text-gray-300">
+              Tipo de campo:
+            </label>
             <select
               value={pitchType}
               onChange={(e) => setPitchType(e.target.value as PitchType)}
@@ -564,7 +600,9 @@ export default function Board() {
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-300">Superficie:</label>
+            <label className="text-sm font-medium text-gray-300">
+              Superficie:
+            </label>
             <select
               value={pitchStyle}
               onChange={(e) => setPitchStyle(e.target.value as PitchStyle)}
@@ -599,75 +637,57 @@ export default function Board() {
           </div>
         </div>
 
-        {/* Row 2: Color Palette */}
-        <div className="flex items-center gap-3">
-          <label className="text-sm font-medium text-gray-300 whitespace-nowrap">Colores:</label>
-          <div className="flex gap-2">
-            {COLORS.map((color) => (
-              <button
-                key={color}
-                onClick={() => setActiveColor(color)}
-                className={`w-8 h-8 rounded border-2 transition ${
-                  activeColor === color ? "border-white scale-110" : "border-gray-600 hover:border-gray-400"
-                }`}
-                style={{ backgroundColor: color }}
-                title={color}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Row 3: Tools Grid */}
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="text-sm font-medium text-gray-300 whitespace-nowrap">Herramientas:</label>
-          <div className="flex gap-1 flex-wrap">
-            {TOOLS.map((tool) => (
-              <button
-                key={tool.id}
-                onClick={() => setActiveTool(tool.id)}
-                className={`px-3 py-1 rounded text-xs font-medium transition ${
-                  activeTool === tool.id
-                    ? "bg-blue-600 text-white shadow-lg"
-                    : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                }`}
-                title={tool.label}
-              >
-                {tool.icon} {tool.label}
-              </button>
-            ))}
-          </div>
+          {TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              onClick={() => setActiveTool(tool.id as Tool)}
+              title={tool.label}
+              className={`w-10 h-10 rounded flex items-center justify-center text-lg transition ${
+                activeTool === tool.id
+                  ? "bg-blue-600 ring-2 ring-blue-400"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }`}
+            >
+              {tool.icon}
+            </button>
+          ))}
         </div>
 
-        {/* Row 4: Player Number */}
-        {activeTool === "monigote" && (
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-300">Número de jugador:</label>
-            <input
-              type="number"
-              value={playerNumber}
-              onChange={(e) => setPlayerNumber(Math.max(1, Math.min(99, parseInt(e.target.value) || 1)))}
-              className="w-16 px-2 py-1 bg-gray-700 text-white rounded border border-gray-600 text-sm"
-              min="1"
-              max="99"
+        <div className="flex items-center gap-2 flex-wrap">
+          {COLORS.map((color) => (
+            <button
+              key={color}
+              onClick={() => setActiveColor(color)}
+              className={`w-8 h-8 rounded border-2 transition ${
+                activeColor === color
+                  ? "border-white ring-2 ring-yellow-400"
+                  : "border-gray-500"
+              }`}
+              style={{ backgroundColor: color }}
+              title={color}
             />
-          </div>
-        )}
+          ))}
+
+          <input
+            type="number"
+            min="1"
+            max="99"
+            value={playerNumber}
+            onChange={(e) => setPlayerNumber(parseInt(e.target.value) || 1)}
+            className="w-12 px-2 py-1 bg-gray-700 text-white rounded border border-gray-600 text-sm"
+            title="Número del jugador"
+          />
+        </div>
       </div>
 
-      {/* Canvas */}
-      <div ref={containerRef} className="flex-1 bg-gray-950 relative overflow-hidden">
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0"
-          style={{ cursor: activeTool === "select" ? "default" : "crosshair" }}
-        />
-      </div>
-
-      {/* Footer Info */}
-      <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 text-xs text-gray-400 flex justify-between">
-        <span>🖱️ Herramienta: <strong>{TOOLS.find(t => t.id === activeTool)?.label || "N/A"}</strong></span>
-        <span>🎨 Color: <strong>{activeColor}</strong></span>
-        <span>📐 Campo: <strong>{pitchType === "full" ? "Completo" : pitchType === "half" ? "Media" : "Tercio"}</strong></span>
+      <div className="flex-1 overflow-auto bg-gray-950">
+        <div ref={containerRef} className="w-full h-full flex items-center justify-center p-2">
+          <canvas
+            ref={canvasRef}
+            className="border-2 border-gray-700 rounded shadow-lg cursor-crosshair"
+          />
+        </div>
       </div>
     </div>
   );
