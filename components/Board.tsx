@@ -104,7 +104,7 @@ export default function Board() {
     drawField(fabricCanvasRef.current, pitchType, pitchStyle);
   }, [pitchType, pitchStyle]);
 
-  const handleMouseDown = (e: fabric.IEvent) => {
+  const handleMouseDown = (e: any) => {
     if (activeTool === "select") return;
     if (!fabricCanvasRef.current) return;
 
@@ -128,7 +128,7 @@ export default function Board() {
     }
   };
 
-  const handleMouseMove = (e: fabric.IEvent) => {
+  const handleMouseMove = (e: any) => {
     if (!isDrawingRef.current || !fabricCanvasRef.current) return;
     if (activeTool === "freehand" || activeTool === "select" || activeTool === "borrador") return;
 
@@ -224,7 +224,7 @@ export default function Board() {
     }
   };
 
-  const handleMouseUp = (e: fabric.IEvent) => {
+  const handleMouseUp = (e: any) => {
     if (!isDrawingRef.current || !fabricCanvasRef.current) return;
     isDrawingRef.current = false;
 
