@@ -108,7 +108,7 @@ export default function Board() {
     if (activeTool === "select") return;
     if (!fabricCanvasRef.current) return;
 
-    const pointer = fabricCanvasRef.current.getPointer(e.e);
+    const pointer = e.pointer || { x: 0, y: 0 };
     startPointRef.current = { x: pointer.x, y: pointer.y };
     isDrawingRef.current = true;
 
@@ -132,7 +132,7 @@ export default function Board() {
     if (!isDrawingRef.current || !fabricCanvasRef.current) return;
     if (activeTool === "freehand" || activeTool === "select" || activeTool === "borrador") return;
 
-    const pointer = fabricCanvasRef.current.getPointer(e.e);
+    const pointer = e.pointer || { x: 0, y: 0 };
     const canvas = fabricCanvasRef.current;
 
     // Remove previous temp object
@@ -229,7 +229,7 @@ export default function Board() {
     isDrawingRef.current = false;
 
     const canvas = fabricCanvasRef.current;
-    const pointer = canvas.getPointer(e.e);
+    const pointer = e.pointer || { x: 0, y: 0 };
 
     if (tempObjectRef.current) {
       tempObjectRef.current.selectable = true;
